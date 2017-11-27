@@ -75,23 +75,23 @@ if __name__ == '__main__':
             k_start = int(epoch) + 1
 
         i_end = 0
-        for k in range(k_start, NB_EPOCH*100+1):
+        for k in range(k_start, NB_EPOCH + 1):
             # Shuffling the training data every epoch to avoid local minima
             indices = np.arange(len(X))
             np.random.shuffle(indices)
-            X = X[indices][:2000]
-            y = y[indices][:2000]
+            for i in range(len(X) // 2000):
+                X_train = X[indices][2000 * i: 2000 * (i + 1)]
+                y_train = y[indices][2000 * i: 2000 * (i + 1)]
 
-            X_sequences_input, y_sequences_input, y_sequences_target = process_data(X, y,
+                X_sequences_input, y_sequences_input, y_sequences_target = process_data(X_train, y_train,
                                                                     X_max_len, y_max_len,
                                                                     X_word_to_ix, y_word_to_ix)
 
-            print('[INFO] Training model: epoch {}th {} samples'.format(k, len(X)))
-            model.fit([X_sequences_input, y_sequences_input],
+                print('[INFO] Training model: epoch {}th {} samples'.format(k, len(X_train)))
+                model.fit([X_sequences_input, y_sequences_input],
                       y_sequences_target,
                       batch_size=BATCH_SIZE, epochs=1, verbose=2,
                       validation_split=0.2)
-            if k % 100 == 0:
                 model.save_weights('checkpoint_epoch_{}.hdf5'.format(k))
 
     # Performing test if we chose test mode
