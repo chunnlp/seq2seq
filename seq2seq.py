@@ -118,7 +118,7 @@ if __name__ == '__main__':
                                                X_max_len, y_max_len,
                                                X_word_to_ix, y_word_to_ix)
 
-        max_target_sequence_length = 10
+        max_target_sequence_length = 2 * y_max_len
         for ind in range(100):
             input_sequence = X_sequences_input[ind:ind+1]
             state_value = encoder_model.predict(input_sequence)
@@ -132,7 +132,8 @@ if __name__ == '__main__':
                 sampled_token_index = np.argmax(outputs[0, -1, :])
                 output_word = y_ix_to_word[sampled_token_index]
                 target_sentence += output_word
-                if len(target_sentence) > max_target_sequence_length:
+                if (output_word == 'EOS' or
+                    len(target_sentence) > max_target_sequence_length):
                     stop_condition = True
 
                 target_sequence = np.zeros((1, 1, y_vocab_len))

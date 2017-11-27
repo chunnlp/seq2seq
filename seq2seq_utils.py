@@ -22,7 +22,8 @@ def load_data(source, dist, max_len, vocab_size):
     X = [text_to_word_sequence(x)[::-1] for x, y in zip(X_data.split('\n'), y_data.split('\n')) if len(x) > 0 and len(y) > 0 and len(x) <= max_len and len(y) <= max_len]
     y = [text_to_word_sequence(y) for x, y in zip(X_data.split('\n'), y_data.split('\n')) if len(x) > 0 and len(y) > 0 and len(x) <= max_len and len(y) <= max_len]
     for i, _ in enumerate(y):
-        y[i].insert(0, 'ZERO')
+        y[i].insert(0, 'SOS')
+        y[i].insert(-1, 'EOS')
     #print(y)
 
     # Creating the vocabulary set with the most common words
