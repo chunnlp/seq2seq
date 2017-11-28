@@ -8,11 +8,11 @@ from seq2seq_utils import *
 
 ap = argparse.ArgumentParser()
 ap.add_argument('-max_len', type=int, default=200)
-ap.add_argument('-vocab_size', type=int, default=10000)
+ap.add_argument('-vocab_size', type=int, default=20000)
 ap.add_argument('-batch_size', type=int, default=64)
 ap.add_argument('-layer_num', type=int, default=3)
 ap.add_argument('-hidden_dim', type=int, default=256)
-ap.add_argument('-nb_epoch', type=int, default=20)
+ap.add_argument('-nb_epoch', type=int, default=100)
 ap.add_argument('-mode', default='train')
 args = vars(ap.parse_args())
 
@@ -35,23 +35,23 @@ if __name__ == '__main__':
 
     # Padding zeros to make all sequences have a same length with the longest one
     print('[INFO] Zero padding...')
-    #X = pad_sequences(X, maxlen=X_max_len, dtype='int32')
-    #y = pad_sequences(y, maxlen=y_max_len, dtype='int32')
-    X = np.array(X)
-    y = np.array(y)
+    X = pad_sequences(X, maxlen=X_max_len, dtype='int32')
+    y = pad_sequences(y, maxlen=y_max_len, dtype='int32')
 
     hidden_size = HIDDEN_DIM
 
     # Creating the network model
     print('[INFO] Compiling model...')
-    encoder_inputs = Input(shape=(None, X_vocab_len))
+    encoder_inputs = Input(shape=(None,))
+    x = Embedding(X_vocab_len, hidden_size, mask_zero=True)(encoder_inputs)
     encoder = LSTM(hidden_size, return_state=True)
-    encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+    encoder_outputs, state_h, state_c = encoder(x)
     encoder_states = [state_h, state_c]
 
-    decoder_inputs = Input(shape=(None, y_vocab_len))
+    decoder_inputs = Input(shape=(None,))
+    x = Embedding(y_vocab_len, hidden_size, mask_zero=True)(decoder_inputs)
     decoder = LSTM(hidden_size, return_sequences=True, return_state=True)
-    decoder_outputs, _, _ = decoder(decoder_inputs,
+    decoder_outputs, _, _ = decoder(x,
                                     initial_state=encoder_states)
     decoder_dense = Dense(y_vocab_len, activation='softmax')
     outputs = decoder_dense(decoder_outputs)
@@ -65,34 +65,18 @@ if __name__ == '__main__':
 
     # Training only if we chose training mode
     if MODE == 'train':
-        k_start = 1
+        indices = np.arange(len(X))
+        np.random.shuffle(indices)
 
-        # If any trained weight was found, then load them into the model
-        if len(saved_weights) != 0:
-            print('[INFO] Saved weights found, loading...')
-            epoch = saved_weights[saved_weights.rfind('_')+1:saved_weights.rfind('.')]
-            model.load_weights(saved_weights)
-            k_start = int(epoch) + 1
+        y_sequences_target = process_data(y, y_max_len, y_word_to_ix)
 
-        i_end = 0
-        for k in range(k_start, NB_EPOCH + 1):
-            # Shuffling the training data every epoch to avoid local minima
-            indices = np.arange(len(X))
-            np.random.shuffle(indices)
-            for i in range(len(X) // 2000):
-                X_train = X[indices][2000 * i: 2000 * (i + 1)]
-                y_train = y[indices][2000 * i: 2000 * (i + 1)]
-
-                X_sequences_input, y_sequences_input, y_sequences_target = process_data(X_train, y_train,
-                                                                    X_max_len, y_max_len,
-                                                                    X_word_to_ix, y_word_to_ix)
-
-                print('[INFO] Training model: epoch {}th {} samples'.format(k, len(X_train)))
-                model.fit([X_sequences_input, y_sequences_input],
-                      y_sequences_target,
-                      batch_size=BATCH_SIZE, epochs=1, verbose=2,
-                      validation_split=0.2)
-                model.save_weights('checkpoint_epoch_{}.hdf5'.format(k))
+        model.fit([X, y],
+                  y_sequences_target,
+                  epochs=NB_EPOCH,
+                  validation_split=0.2,
+                  #steps_per_epoch=len(X_sequences_input) // BATCH_SIZE)
+                  batch_size=BATCH_SIZE)
+        model.save_weights('checkpoint.hdf5')
 
     # Performing test if we chose test mode
     else:
@@ -107,37 +91,42 @@ if __name__ == '__main__':
         decoder_state_input_h = Input(shape=(hidden_size,))
         decoder_state_input_c = Input(shape=(hidden_size,))
         decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+        x = Embedding(y_vocab_len, hidden_size)(decoder_inputs)
         decoder_outputs, state_h, state_c = decoder(
-            decoder_inputs, initial_state=decoder_states_inputs)
+            x, initial_state=decoder_states_inputs)
         decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
         decoder_model = Model(
             [decoder_inputs] + decoder_states_inputs,
             [decoder_outputs] + decoder_states)
-        X_sequences_input, _, _ = process_data(X, y,
+        X_sequences_input, _, _ = process_data(X[:100], y[:100],
                                                X_max_len, y_max_len,
                                                X_word_to_ix, y_word_to_ix)
 
         max_target_sequence_length = 2 * y_max_len
         for ind in range(100):
-            input_sequence = X_sequences_input[ind:ind+1]
+            input_sequence = X[ind:ind+1]
+            print(input_sequence)
             state_value = encoder_model.predict(input_sequence)
-            target_sequence = np.zeros((1, 1, y_vocab_len))
-            target_sequence[0, 0, 0] = 1.
+            target_sequence = np.zeros((1, 1))
+            target_sequence[0, 0] = y_word_to_ix['SOS']
             stop_condition = False
-            target_sentence = ''
+            target_sentence = []
             while not stop_condition:
+                print(target_sequence)
                 outputs, h, c = decoder_model.predict(
                     [target_sequence] + state_value)
                 sampled_token_index = np.argmax(outputs[0, -1, :])
                 output_word = y_ix_to_word[sampled_token_index]
-                target_sentence += output_word
+                if output_word == 'EOS' or output_word == 'eos':
+                    print(output_word)
+                target_sentence.append(output_word)
                 if (output_word == 'EOS' or
                     len(target_sentence) > max_target_sequence_length):
                     stop_condition = True
 
-                target_sequence = np.zeros((1, 1, y_vocab_len))
-                target_sequence[0, 0, sampled_token_index] = 1.
+                target_sequence = np.zeros((1, 1))
+                target_sequence[0, 0] = sampled_token_index
 
                 states_values = [h, c]
             print(target_sentence)
